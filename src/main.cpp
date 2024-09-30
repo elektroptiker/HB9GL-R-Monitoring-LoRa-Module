@@ -325,29 +325,21 @@ void beacon_telemetry()
                     String(settings.tlm.comment.c_str()) + "/A=" + String(settings.tlm.alt.c_str());
     lora_send(Beacon);
 
-    // Example:
-    // :N0QBF-11V:PARM.Battery,Btemp,ATemp,Pres,Alt,Camra,Chut,Sun,10m,ATV
     Beacon = String(settings.tlm.callsign.c_str()) + ">" + String(settings.tlm.destcall.c_str()) +
              "::" + String(settings.tlm.callsign.c_str()) +
-             ":PARM.Vbatt,Capacity,Temperature,Humidity,,USBPower,240V,PCconn,Uplink,Echolink";
+             " :PARM.Vbatt,Capacity,Temperature,Humidity,,USBPower,240V,PCconn,Uplink,Echolink";
     lora_send(Beacon);
 
-    // Example
-    // :N0QBF-11V:UNIT.v/100,deg.F,deg.F,Mbar,Kft,Click,OPEN,on,on,hi
     Beacon = String(settings.tlm.callsign.c_str()) + ">" + String(settings.tlm.destcall.c_str()) +
-             "::" + String(settings.tlm.callsign.c_str()) + ":UNIT.Vdc,%,Celsius,%,,UP,UP,UP,UP,UP";
+             "::" + String(settings.tlm.callsign.c_str()) + " :UNIT.Vdc,%,Celsius,%,,UP,UP,UP,UP,UP";
     lora_send(Beacon);
 
-    // Example
-    // :N0QBF-11V:EQNS.0,5.2,0,0,.53,-32,3,4.39,49,-32,3,18,1,2,3
     Beacon = String(settings.tlm.callsign.c_str()) + ">" + String(settings.tlm.destcall.c_str()) +
-             "::" + String(settings.tlm.callsign.c_str()) + ":EQNS.0,0.01,2.5,0,1,0,0,1,-100,0,1,0";
+             "::" + String(settings.tlm.callsign.c_str()) + " :EQNS.0,0.01,2.5,0,1,0,0,1,-100,0,1,0";
     lora_send(Beacon);
 
-    // Example
-    // :N0QBF-11V:BITS.10110000,N0QBF’s Big Balloon
     Beacon = String(settings.tlm.callsign.c_str()) + ">" + String(settings.tlm.destcall.c_str()) +
-             "::" + String(settings.tlm.callsign.c_str()) + ":BITS.HB9GL-R telemetry by HB9HDG";
+             "::" + String(settings.tlm.callsign.c_str()) + " :BITS.HB9GL-R telemetry by HB9HDG";
     lora_send(Beacon);
 #endif
 }
