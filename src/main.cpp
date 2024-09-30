@@ -29,19 +29,15 @@ static time_t lastIgBeacon = 0;
 static time_t lastMtBeacon = 0;
 static time_t lastUpload = 0;
 
-// last time we connected to the wu server in milliseconds
-// unsigned long lastAPRSDataTime = 0;
-// unsigned long lastAPRSStatusTime = 0;
 unsigned long lastSerialPacketReceived = 0;
-unsigned long KeepAliveInterval = 30L * 1000L; // after 30seconds we assume the PC offline
+unsigned long KeepAliveInterval = 30L * 1000L; // after 30 seconds we assume the PC offline
 struct TIMER
 {
     unsigned long stamp;
     unsigned long duration;
     bool state;
 };
-// TIMER ledBlink {0, 100, 0};  // timer for LED to blink with 100 msec
-// TIMER blinkBlink {0, 2000, 0}; // timer to control LED blinking with 2000 msec
+
 TIMER statusBlink{0, 1000, 0};                     // timer to control LED blinking with 1000 msec
 TIMER tmrAPRSsendData{0, 15 * 60 * 1000, 0};       // timer to send APRS Data every 15 minutes
 TIMER tmrAPRSsendStatus{0, 1 * 60 * 60 * 1000, 0}; // timer to send APRS Status every hour
@@ -50,25 +46,39 @@ TIMER tmrToggleMains{0, 5000, 0};                  // timer for testing Mains po
 unsigned long currentTime;
 
 /**
- * @brief inserts leading "0" to the string up to the specified lenght
+ * @brief adds leading characters to a string
+ *
+ * @param str input string
+ * @param s final length
+ * @param paddedChar padded character (default: space)
+ * @return std::string
  */
-String padzero(String &number, byte length)
+std::string lpad(std::string const &str, size_t length, char paddedChar = ' ')
 {
-    while (number.length() < length)
-        number = "0" + number;
-    return number;
+    if (str.size() < length)
+    {
+        return std::string(length - str.size(), paddedChar) + str;
+    }
+    else
+    {
+        return str;
+    }
 }
 
 /**
- * @brief inserts leading "0" to the string up to the specified lenght
+ * @brief adds trailing characters to a string
+ *
+ * @param str input string
+ * @param s final length
+ * @param paddedChar padded character (default: space)
+ * @return std::string
  */
-template <typename T>
-String padzero(T &number, byte length)
+std::string rpad(std::string const &str, size_t s, char paddedChar = ' ')
 {
-    auto tmpStr = String(number);
-    while (tmpStr.length() < length)
-        tmpStr = "0" + tmpStr;
-    return tmpStr;
+    if (str.size() < s)
+        return str + std::string(s - str.size(), paddedChar);
+    else
+        return str;
 }
 
 void setup()
@@ -310,6 +320,9 @@ void lora_send(T tx_data)
     digitalWrite(settings.tlm.green_led_pin, LOW);
 }
 
+/**
+ * @brief send APRS position and telemetry status and config
+ */
 void beacon_telemetry()
 {
 #if SERIALDEBUG
@@ -320,26 +333,47 @@ void beacon_telemetry()
 #if LORA
 
     // String Beacon = String(TELEMETRY_CALLSIGN) + ">" + String(DESTCALL_TELEMETRY) + ":=" + String(TELEMETRY_LAT) + "/" + String(TELEMETRY_LON) + "_.../" + String(TELEMETRY_COMMENT);
-    String Beacon = String(settings.tlm.callsign.c_str()) + ">" + String(settings.tlm.destcall.c_str()) + ":!" +
+
+    // send the status of HB9GL (root)
+    String Beacon = String("HB9GL-0") + ">" + String(settings.tlm.destcall.c_str()) + ":!" +
                     String(settings.tlm.lat.c_str()) + "/" + String(settings.tlm.lon.c_str()) + "r" +
-                    String(settings.tlm.comment.c_str()) + "/A=" + String(settings.tlm.alt.c_str());
+                    String(settings.tlm.comment.c_str()).substring(0, 43) + "/A=" + String(settings.tlm.alt.c_str());
+    lora_send(Beacon);
+
+    // send status of current station
+    Beacon = String(settings.tlm.callsign.c_str()) + ">" + String(settings.tlm.destcall.c_str()) + ":!" +
+             String(settings.tlm.lat.c_str()) + "/" + String(settings.tlm.lon.c_str()) + "r" +
+             String(settings.tlm.comment.c_str()).substring(0, 43) + "/A=" + String(settings.tlm.alt.c_str());
+    lora_send(Beacon);
+
+    /**
+     * @brief set APRS telemetry parameters/titles
+     * first the 6 analog channels
+     * then up to 8 digital channels
+     */
+    Beacon = String(settings.tlm.callsign.c_str()) + ">" + String(settings.tlm.destcall.c_str()) +
+             "::" + rpad(settings.tlm.callsign, 9).c_str() +
+             ":PARM.Vbatt,Capacity,Temperature,Humidity,,USBPower,240V,PCconn,Uplink,Echolink";
+    lora_send(Beacon);
+
+    /**
+     * @brief set APRS telemetry parameters/units
+     * first the 6 analog channels
+     * then up to 8 digital channels
+     */
+    Beacon = String(settings.tlm.callsign.c_str()) + ">" + String(settings.tlm.destcall.c_str()) +
+             "::" + rpad(settings.tlm.callsign, 9).c_str() + ":UNIT.Vdc,%,Celsius,%,,UP,UP,UP,UP,UP";
+    lora_send(Beacon);
+
+    /**
+     * @brief set APRS telemetry parameters/equations for the 6 analog channels
+     */
+    Beacon = String(settings.tlm.callsign.c_str()) + ">" + String(settings.tlm.destcall.c_str()) +
+             "::" + rpad(settings.tlm.callsign, 9).c_str() + ":EQNS.0,0.01,2.5,0,1,0,0,1,-100,0,1,0";
     lora_send(Beacon);
 
     Beacon = String(settings.tlm.callsign.c_str()) + ">" + String(settings.tlm.destcall.c_str()) +
-             "::" + String(settings.tlm.callsign.c_str()) +
-             " :PARM.Vbatt,Capacity,Temperature,Humidity,,USBPower,240V,PCconn,Uplink,Echolink";
-    lora_send(Beacon);
-
-    Beacon = String(settings.tlm.callsign.c_str()) + ">" + String(settings.tlm.destcall.c_str()) +
-             "::" + String(settings.tlm.callsign.c_str()) + " :UNIT.Vdc,%,Celsius,%,,UP,UP,UP,UP,UP";
-    lora_send(Beacon);
-
-    Beacon = String(settings.tlm.callsign.c_str()) + ">" + String(settings.tlm.destcall.c_str()) +
-             "::" + String(settings.tlm.callsign.c_str()) + " :EQNS.0,0.01,2.5,0,1,0,0,1,-100,0,1,0";
-    lora_send(Beacon);
-
-    Beacon = String(settings.tlm.callsign.c_str()) + ">" + String(settings.tlm.destcall.c_str()) +
-             "::" + String(settings.tlm.callsign.c_str()) + " :BITS.HB9GL-R telemetry by HB9HDG";
+             "::" + rpad(settings.tlm.callsign, 9).c_str() + ":BITS.HB9GL-R telemetry by HB9HDG";
     lora_send(Beacon);
 #endif
 }
@@ -369,6 +403,11 @@ Extemp: 67 degF (TLM: 67 EQN: 0,1,0)
 Pres: 892 Mbar (TLM: 892 EQN: 0,1,0)
 Bit-Bedeutung:	 GPS     BME     Per     Pwr    (BITS: 00011111)
 */
+
+/**
+ * @brief send APRS telemetry data
+ *
+ */
 void beacon_telemetry_DATA()
 {
 #if SERIALDEBUG
@@ -383,27 +422,27 @@ void beacon_telemetry_DATA()
     EEPROM.write(settings.basic.EEPROMaddress, display.get_aprsPacketSeq());
     EEPROM.commit();
 
-    byte txvoltage = (display.get_intVoltage() - 2.5) / (2.5 / 255);
-    byte txtemperature = (display.get_temperature() + 100);
-    byte txhumidity = display.get_humidity();
-    auto txaprsPacketSeq = display.get_aprsPacketSeq();
-    auto txbattPercent = display.get_battPercent();
-    String txbits = "00000";
+    auto txvoltage = std::to_string((display.get_intVoltage() - 2.5) / (2.5 / 255));
+    auto txtemperature = std::to_string((display.get_temperature() + 100));
+    auto txhumidity = std::to_string(display.get_humidity());
+    auto txaprsPacketSeq = std::to_string(display.get_aprsPacketSeq());
+    auto txbattPercent = std::to_string(display.get_battPercent());
+    std::string txbits = "00000"; // bits for each of the digital telemetry channels
 
     if (display.get_statusPCUSBpower())
-        txbits.setCharAt(0, '1');
+        txbits[0] = '1';
     if (display.get_statusMainsPower())
-        txbits.setCharAt(1, '1');
+        txbits[1] = '1';
     if (display.get_statusPCConnected())
-        txbits.setCharAt(2, '1');
+        txbits[2] = '1';
     if (display.get_statusUpLink())
-        txbits.setCharAt(3, '1');
+        txbits[3] = '1';
     if (display.get_statusEchoLink())
-        txbits.setCharAt(4, '1');
+        txbits[4] = '1';
 
-    String Beacon = String(settings.tlm.callsign.c_str()) + ">" + String(settings.tlm.destcall.c_str()) + ":T#" +
-                    padzero(txaprsPacketSeq, 3) + "," + padzero(txvoltage, 3) + "," + padzero(txbattPercent, 3) + "," +
-                    padzero(txtemperature, 3) + "," + padzero(txhumidity, 3) + ",," + txbits;
+    auto Beacon = settings.tlm.callsign + ">" + settings.tlm.destcall + ":T#" +
+                    lpad(txaprsPacketSeq, 3, '0') + "," + lpad(txvoltage, 3) + "," + lpad(txbattPercent, 3) + "," +
+                    lpad(txtemperature, 3) + "," + lpad(txhumidity, 3) + ",," + txbits;
 #if SERIALDEBUG
     Serial.print("beacon_telemetry_DATA beacon:");
     Serial.println(Beacon);

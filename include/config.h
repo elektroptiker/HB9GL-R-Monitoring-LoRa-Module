@@ -23,8 +23,8 @@ struct Telemetry_settings
     const std::string callsign{"HB9GL-15"}; // Passcode for HB9GL-R: 7370
     const std::string lat{"4704.16N"};      // 47°04'16.5"N 9°05'26.5"E
     const std::string lon{"00905.26E"};
-    const std::string alt{"004557"}; // 1389m
-    const std::string comment{"HB9GL-R 438.975 | Rx:-7.6 MHz | T:71.9Hz"};
+    const std::string alt{"004557"};                                          // 1389m
+    const std::string comment{"HB9GL-R 438.975, -7.6 | T:71.9 | Node:41140"}; //  max 43 chars!
     const bool use_status{true}; // send status below in timeout of igate packet (needs wifi, igate on and aprs-is)
     const std::string status{"https://www.hb9gl.ch"};
     const std::uint8_t hall_sensor_pin{35};
