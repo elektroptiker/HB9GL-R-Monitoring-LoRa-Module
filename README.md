@@ -1,5 +1,14 @@
 # HB9GL-R Monitoring LoRa Module
 
+Goal of this project was to get some system status of the HB9GL-R VHF relay when the internet link is off or the PC is unreachable.
+
+The Module sends status data to the APRS network every 15 minutes or when critical signals/voltages changes.
+
+I just made this repository visible to share my work. It's not code optimized in any kind, nor is it "clean" code.
+As soon as I find time, I will continue working on it.
+
+The actual module is installed since October 2024 and is sending data to the APRS network. You can watch it here: https://aprs.fi/info/a/HB9GL-15
+
 ## Flashing via ESP Flash Download Tool from Espressif
 
 This is the upload list for ESP Flash Download Tool
