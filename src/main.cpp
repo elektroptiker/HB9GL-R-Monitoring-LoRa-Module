@@ -1,28 +1,21 @@
 #include <Arduino.h>
-#include <LoRa.h>
-#include <Wire.h>
-#include <config.h>
-#include <hb9gl.h>
-#include <interface.h>
-#include <string>
+#include <config.h>    // our configuration file
+#include <hb9gl.h>     // data and display handling
+#include <interface.h> // USB communication definition with PC-Compagnion
+#include <mylora.h>    // lora handling
 
-#define LORA true
-#define SERIALDEBUG false
+// defines for debugging purpuoses
+#define LORA true         // enable LoRa tx
+#define SERIALDEBUG false // use usb/serial for debug instead communication with PC-Compagnion
 #define SERIALDATA !SERIALDEBUG
-
-EspClass esp;
-DHT dht;
-SSD1306 lcd(0x3c, 21, 22);
-Display display(lcd, dht);
 
 const Settings settings;
 
-void lora_setup();
-void lora_send(String tx_data);
-template <typename T>
-void lora_send(T tx_data);
-void beacon_telemetry();
-void beacon_telemetry_DATA();
+EspClass esp;
+DHT dht;
+SSD1306 lcd(settings.basic.display_address, settings.basic.display_sda, settings.basic.display_scl);
+Display display(lcd, dht);
+MyLora lora;
 
 static time_t aprsLastReconnect = 0;
 static time_t lastIgBeacon = 0;
@@ -30,7 +23,9 @@ static time_t lastMtBeacon = 0;
 static time_t lastUpload = 0;
 
 unsigned long lastSerialPacketReceived = 0;
-unsigned long KeepAliveInterval = 30L * 1000L; // after 30 seconds we assume the PC offline
+unsigned long KeepAliveInterval = settings.tlm.pc_timeout * 1000L;
+
+// basic timer struct
 struct TIMER
 {
     unsigned long stamp;
@@ -38,52 +33,18 @@ struct TIMER
     bool state;
 };
 
-TIMER statusBlink{0, 1000, 0};                     // timer to control LED blinking with 1000 msec
-TIMER tmrAPRSsendData{0, 15 * 60 * 1000, 0};       // timer to send APRS Data every 15 minutes
-TIMER tmrAPRSsendStatus{0, 1 * 60 * 60 * 1000, 0}; // timer to send APRS Status every hour
-TIMER tmrGetDHT11Data{0, 30 * 1000, 0};            // timer to get new environment data from DHT11 sensor
-TIMER tmrToggleMains{0, 5000, 0};                  // timer for testing Mains power toggle every 5 seconds
+TIMER statusBlink{0, 1000, 0};                                         // timer to control LED blinking with 1000 msec
+TIMER tmrAPRSsendData{0, settings.tlm.beacon_interval * 60 * 1000, 0}; // timer to tx APRS Data
+TIMER tmrAPRSsendStatus{0, 1 * settings.tlm.status_interval * 60 * 1000, 0}; // timer to tx APRS Status
+TIMER tmrGetDHT11Data{0,
+                      settings.tlm.dht11_interval * 1000,
+                      0}; // timer to get new environmental data from DHT11 sensor
+
 unsigned long currentTime;
-
-/**
- * @brief adds leading characters to a string
- *
- * @param str input string
- * @param s final length
- * @param paddedChar padded character (default: space)
- * @return std::string
- */
-std::string lpad(std::string const &str, size_t length, char paddedChar = ' ')
-{
-    if (str.size() < length)
-    {
-        return std::string(length - str.size(), paddedChar) + str;
-    }
-    else
-    {
-        return str;
-    }
-}
-
-/**
- * @brief adds trailing characters to a string
- *
- * @param str input string
- * @param s final length
- * @param paddedChar padded character (default: space)
- * @return std::string
- */
-std::string rpad(std::string const &str, size_t s, char paddedChar = ' ')
-{
-    if (str.size() < s)
-        return str + std::string(s - str.size(), paddedChar);
-    else
-        return str;
-}
 
 void setup()
 {
-    Serial.begin(settings.lora.serial_baud);
+    Serial.begin(settings.basic.serial_baud);
     display.init();
 
 #if SERIALDEBUG
@@ -91,14 +52,14 @@ void setup()
     Serial.print(settings.basic.version.c_str());
     Serial.println("\nby HB9HDG\n");
 #endif
-    pinMode(settings.tlm.green_led_pin, OUTPUT);
+    pinMode(settings.basic.green_led_pin, OUTPUT);
     pinMode(settings.tlm.usb_power_pin, INPUT);
-    pinMode(settings.tlm.mains_power_pin, INPUT);
+    pinMode(settings.tlm.ext_power_pin, INPUT);
+
 #if SERIALDEBUG
     Serial.println("{setup} LoRa Setup init");
 #endif
-
-    lora_setup();
+    lora.init();
 
 #if SERIALDEBUG
     Serial.println("{setup} Display data");
@@ -107,13 +68,15 @@ void setup()
     display.displayData();
 
 #if SERIALDEBUG
-    Serial.println("{setup} beacon_telemetry");
+    Serial.println("{setup} tx_telemetry_beacon");
 #endif
-    beacon_telemetry();
+    tmrAPRSsendStatus.stamp = millis();
+    lora.tx_telemetry_beacon(display);
 #if SERIALDEBUG
-    Serial.println("{setup} beacon_telemetry_DATA");
+    Serial.println("{setup} tx_telemetry_data");
 #endif
-    beacon_telemetry_DATA();
+    tmrAPRSsendData.stamp = millis();
+    lora.tx_telemetry_data(display);
 #if SERIALDEBUG
     Serial.println("{setup} Startup finished.");
 #endif
@@ -133,10 +96,11 @@ void loop()
     {
         statusBlink.stamp = currentTime;
         statusBlink.state = !statusBlink.state;
-        digitalWrite(settings.tlm.green_led_pin, statusBlink.state);
+        digitalWrite(settings.basic.green_led_pin, statusBlink.state);
     }
 
 #if SERIALDATA
+    // serial communication with pc-compagnion
     // look for incoming serial packets
     while (Serial.available() >= sizeof(uint32_t))
     {
@@ -222,14 +186,14 @@ void loop()
     }
     display.updateData();
 
-    // send aprs status messages
+    // send aprs status messages (position and tlm-parameters)
     if (currentTime - tmrAPRSsendStatus.stamp >= tmrAPRSsendStatus.duration)
     {
 #if SERIALDEBUG
         Serial.println("{loop} aprs status timer reached.");
 #endif
         tmrAPRSsendStatus.stamp = currentTime;
-        beacon_telemetry();
+        lora.tx_telemetry_beacon(display);
     }
     // send aprs telemetry data
     if (currentTime - tmrAPRSsendData.stamp >= tmrAPRSsendData.duration)
@@ -238,217 +202,18 @@ void loop()
         Serial.println("{loop} aprs telemetry timer reached.");
 #endif
         tmrAPRSsendData.stamp = currentTime;
-        beacon_telemetry_DATA();
+        lora.tx_telemetry_data(display);
     }
 
     if (display.get_statusChanged())
     {
         display.reset_statusChanged();
         display.displayData();
-        beacon_telemetry_DATA();
+        tmrAPRSsendStatus.stamp = currentTime;
+        lora.tx_telemetry_data(display);
     }
     if (currentTime % 50)
     {
         display.displayData();
     }
-}
-
-void lora_setup()
-{
-    SPI.begin(settings.lora.SCK_pin, settings.lora.MISO_pin, settings.lora.MOSI_pin, settings.lora.SS_pin);
-    LoRa.setPins(settings.lora.SS_pin, settings.lora.RST_pin, settings.lora.DIO0_pin);
-    if (!LoRa.begin(settings.lora.frequency))
-    {
-        // Serial.println("Failed to setup LoRa module.");
-        while (1)
-            ;
-    }
-    LoRa.setSpreadingFactor(settings.lora.SpreadingFactor);
-    LoRa.setSignalBandwidth(settings.lora.SignalBandwidth);
-    LoRa.setCodingRate4(settings.lora.CodingRate4);
-    LoRa.enableCrc();
-    LoRa.setTxPower(settings.lora.TxPower);
-    delay(3000);
-    LoRa.sleep();
-}
-
-void lora_send(String tx_data)
-{
-#if SERIALDEBUG
-    Serial.println("Function called: lora_send");
-#endif
-    digitalWrite(settings.tlm.green_led_pin, HIGH);
-#if LORA
-    LoRa.setFrequency(settings.lora.frequency);
-    LoRa.beginPacket();
-    LoRa.write('<');
-    LoRa.write(0xFF);
-    LoRa.write(0x01);
-#if SERIALDEBUG
-    Serial.println("TX: " + tx_data);
-#endif
-    LoRa.write(( const uint8_t * )tx_data.c_str(), tx_data.length());
-    LoRa.endPacket();
-    LoRa.setFrequency(settings.lora.frequency);
-    LoRa.sleep();
-#endif
-    digitalWrite(settings.tlm.green_led_pin, LOW);
-}
-
-template <typename T>
-void lora_send(T tx_data)
-{
-#if SERIALDEBUG
-    Serial.println("Function called: lora_send");
-#endif
-
-    digitalWrite(settings.tlm.green_led_pin, HIGH);
-#if LORA
-    LoRa.setFrequency(settings.lora.frequency);
-    LoRa.beginPacket();
-    LoRa.write('<');
-    LoRa.write(0xFF);
-    LoRa.write(0x01);
-#if SERIALDEBUG
-    Serial.println("TX: " + tx_data);
-#endif
-    LoRa.write(( const uint8_t * )tx_data.c_str(), tx_data.length());
-    LoRa.endPacket();
-    LoRa.setFrequency(settings.lora.frequency);
-    LoRa.sleep();
-#endif
-    digitalWrite(settings.tlm.green_led_pin, LOW);
-}
-
-/**
- * @brief send APRS position and telemetry status and config
- */
-void beacon_telemetry()
-{
-#if SERIALDEBUG
-    Serial.println("Function called: beacon_telemetry");
-#endif
-
-    tmrAPRSsendStatus.stamp = millis();
-#if LORA
-
-    // String Beacon = String(TELEMETRY_CALLSIGN) + ">" + String(DESTCALL_TELEMETRY) + ":=" + String(TELEMETRY_LAT) + "/" + String(TELEMETRY_LON) + "_.../" + String(TELEMETRY_COMMENT);
-
-    // send the status of HB9GL (root)
-    String Beacon = String("HB9GL-0") + ">" + String(settings.tlm.destcall.c_str()) + ":!" +
-                    String(settings.tlm.lat.c_str()) + "/" + String(settings.tlm.lon.c_str()) + "r" +
-                    String(settings.tlm.comment.c_str()).substring(0, 43) + "/A=" + String(settings.tlm.alt.c_str());
-    lora_send(Beacon);
-
-    // send status of current station
-    Beacon = String(settings.tlm.callsign.c_str()) + ">" + String(settings.tlm.destcall.c_str()) + ":!" +
-             String(settings.tlm.lat.c_str()) + "/" + String(settings.tlm.lon.c_str()) + "r" +
-             String(settings.tlm.comment.c_str()).substring(0, 43) + "/A=" + String(settings.tlm.alt.c_str());
-    lora_send(Beacon);
-
-    /**
-     * @brief set APRS telemetry parameters/titles
-     * first the 6 analog channels
-     * then up to 8 digital channels
-     */
-    Beacon = String(settings.tlm.callsign.c_str()) + ">" + String(settings.tlm.destcall.c_str()) +
-             "::" + rpad(settings.tlm.callsign, 9).c_str() +
-             ":PARM.Vbatt,Capacity,Temperature,Humidity,,USBPower,240V,PCconn,Uplink,Echolink";
-    lora_send(Beacon);
-
-    /**
-     * @brief set APRS telemetry parameters/units
-     * first the 6 analog channels
-     * then up to 8 digital channels
-     */
-    Beacon = String(settings.tlm.callsign.c_str()) + ">" + String(settings.tlm.destcall.c_str()) +
-             "::" + rpad(settings.tlm.callsign, 9).c_str() + ":UNIT.Vdc,%,Celsius,%,,UP,UP,UP,UP,UP";
-    lora_send(Beacon);
-
-    /**
-     * @brief set APRS telemetry parameters/equations for the 6 analog channels
-     */
-    Beacon = String(settings.tlm.callsign.c_str()) + ">" + String(settings.tlm.destcall.c_str()) +
-             "::" + rpad(settings.tlm.callsign, 9).c_str() + ":EQNS.0,0.01,2.5,0,1,0,0,1,-100,0,1,0";
-    lora_send(Beacon);
-
-    Beacon = String(settings.tlm.callsign.c_str()) + ">" + String(settings.tlm.destcall.c_str()) +
-             "::" + rpad(settings.tlm.callsign, 9).c_str() + ":BITS.HB9GL-R telemetry by HB9HDG";
-    lora_send(Beacon);
-#endif
-}
-
-/*
-
-https://w4krl.com/sending-aprs-analog-telemetry-the-basics/
-
-Cpu: 0.270 Load (TLM: 270 EQN: 0,0.001,0)
-Temp: 37.552 DegC (TLM: 37552 EQN: 0,0.001,0)
-FreeM: 805 Mb (TLM: 805 EQN: 0,1,0)
-RxP: 44 Pkt (TLM: 44 EQN: 0,1,0)
-TxP: 25 Pkt (TLM: 25 EQN: 0,1,0)
-
-
-VE6AGD-11>APRS,WIDE1-1,WIDE2-1,qAR,CALGRY::VE6AGD-11:PARAM.SlrPnl,Batt,Temp1,Temp2,Pres,blank,blank,blank,blank,Pos,BME280:Rate,Pwr
-VE6AGD-11>APRS,WIDE1-1,WIDE2-1,qAR,CALGRY::VE6AGD-11:UNIT.v/100,v/100,degF,degF,Mbar,0,0,0,0,true,on,slow,high
-VE6AGD-11>APRS,WIDE1-1,WIDE2-1,qAR,CALGRY::VE6AGD-11:EQNS.0,0.01,0,0,0.01,0,0,1,0,0,1,0,0,1,0
-VE6AGD-11>APRS,WIDE1-1,WIDE2-1,qAR,CALGRY::VE6AGD-11:BITS.00000111,VE6AGD-11 Balloon
-VE6AGD-11>APRS,WIDE1-1,WIDE2-1,qAR,CALGRY:T#003,506,423,74,-196,0,00001001,1284R823_1284L34
-
-Projekt:	VE6AGD-11 Balloon
-Werte:	Solar: 4.850 volts (TLM: 485 EQN: 0,0.01,0)
-Batt: 4.190 volts (TLM: 419 EQN: 0,0.01,0)
-Intemp: 69 degF (TLM: 69 EQN: 0,1,0)
-Extemp: 67 degF (TLM: 67 EQN: 0,1,0)
-Pres: 892 Mbar (TLM: 892 EQN: 0,1,0)
-Bit-Bedeutung:	 GPS     BME     Per     Pwr    (BITS: 00011111)
-*/
-
-/**
- * @brief send APRS telemetry data
- *
- */
-void beacon_telemetry_DATA()
-{
-#if SERIALDEBUG
-    Serial.println("Function called: beacon_telemetry_DATA");
-#endif
-
-    tmrAPRSsendData.stamp = millis();
-
-    display.inc_aprsPacketSeq();
-
-    //write sequence to eeprom
-    EEPROM.write(settings.basic.EEPROMaddress, display.get_aprsPacketSeq());
-    EEPROM.commit();
-
-    auto txvoltage = std::to_string((display.get_intVoltage() - 2.5) / (2.5 / 255));
-    auto txtemperature = std::to_string((display.get_temperature() + 100));
-    auto txhumidity = std::to_string(display.get_humidity());
-    auto txaprsPacketSeq = std::to_string(display.get_aprsPacketSeq());
-    auto txbattPercent = std::to_string(display.get_battPercent());
-    std::string txbits = "00000"; // bits for each of the digital telemetry channels
-
-    if (display.get_statusPCUSBpower())
-        txbits[0] = '1';
-    if (display.get_statusMainsPower())
-        txbits[1] = '1';
-    if (display.get_statusPCConnected())
-        txbits[2] = '1';
-    if (display.get_statusUpLink())
-        txbits[3] = '1';
-    if (display.get_statusEchoLink())
-        txbits[4] = '1';
-
-    auto Beacon = settings.tlm.callsign + ">" + settings.tlm.destcall + ":T#" +
-                    lpad(txaprsPacketSeq, 3, '0') + "," + lpad(txvoltage, 3) + "," + lpad(txbattPercent, 3) + "," +
-                    lpad(txtemperature, 3) + "," + lpad(txhumidity, 3) + ",," + txbits;
-#if SERIALDEBUG
-    Serial.print("beacon_telemetry_DATA beacon:");
-    Serial.println(Beacon);
-#endif
-
-#if LORA
-    lora_send(Beacon);
-#endif
 }

@@ -1,5 +1,5 @@
 #include <hb9gl.h>
-#define SERIALDEBUG false
+#define SERIALDEBUG false // use usb/serial for debug instead communication with PC-Compagnion
 #define SERIALDATA !SERIALDEBUG
 
 
@@ -11,7 +11,7 @@ void Data::init()
 
     // read aprs sequence counter from eeprom
     EEPROM.begin(512);
-    m_aprsPacketSeq = EEPROM.read(m_basicSettings.EEPROMaddress);
+    m_aprsPacketSeq = EEPROM.read(settings.basic.EEPROMaddress);
     if (isnan(m_aprsPacketSeq))
         m_aprsPacketSeq = 0;
         // if (m_aprsPacketSeq < 146)
@@ -24,7 +24,7 @@ void Data::init()
 
 
     // read internal battery status
-    m_intvoltage = float(analogRead(m_tlmSettings.hall_sensor_pin)) / 4095 * 2 * 3.3 * 1.1;
+    m_intvoltage = float(analogRead(settings.tlm.hall_sensor_pin)) / 4095 * 2 * 3.3 * 1.1;
     m_battPercent = 100 * (m_intvoltage - 3.3) / (4.2 - 3.3);
     if (m_battPercent > 100)
         m_battPercent = 100;
@@ -36,7 +36,7 @@ void Data::init()
 #endif
 
     // read dht22 sensor
-    m_dht.setup(m_tlmSettings.dht11_pin);
+    m_dht.setup(settings.tlm.dht11_pin);
     delay(1000);
     auto currentTime = millis();
     m_dhtTimeStamp = currentTime;
@@ -105,7 +105,7 @@ float Data::get_intVoltage()
     if (currentTime - m_battTimeStamp >= m_battWaitTime)
     {
         m_battTimeStamp = currentTime;
-        m_intvoltage = float(analogRead(m_tlmSettings.hall_sensor_pin)) / 4095 * 2 * 3.3 * 1.1;
+        m_intvoltage = float(analogRead(settings.tlm.hall_sensor_pin)) / 4095 * 2 * 3.3 * 1.1;
     }
     return m_intvoltage;
 }
@@ -144,7 +144,7 @@ bool Data::get_statusPCUSBpower()
 #if SERIALDEBUG
     // Serial.println("{Data::get_statusPCUSBPower}");
 #endif
-    m_statusPCUSBpower = digitalRead(m_tlmSettings.usb_power_pin);
+    m_statusPCUSBpower = digitalRead(settings.tlm.usb_power_pin);
     return m_statusPCUSBpower;
 }
 
@@ -153,7 +153,7 @@ bool Data::get_statusMainsPower()
 #if SERIALDEBUG
     // Serial.println("{Data::get_statusMainsPower}");
 #endif
-    m_statusMainsPower = digitalRead(m_tlmSettings.mains_power_pin);
+    m_statusMainsPower = digitalRead(settings.tlm.ext_power_pin);
     return m_statusMainsPower;
 }
 
@@ -227,7 +227,7 @@ void Display::init()
     m_lcd.setColor(WHITE);
     strcat(tmpStr, m_txt.app_title.c_str());
     strcat(tmpStr, " ");
-    strcat(tmpStr, m_basicSettings.version.c_str());
+    strcat(tmpStr, settings.basic.version.c_str());
     m_lcd.drawString(0, 0, tmpStr);
     m_lcd.drawHorizontalLine(0, 11, 128);
     m_lcd.display();
@@ -266,7 +266,7 @@ void Display::displayData()
 
     strcat(tmpStr, m_txt.app_title.c_str());
     strcat(tmpStr, " ");
-    strcat(tmpStr, m_basicSettings.version.c_str());
+    strcat(tmpStr, settings.basic.version.c_str());
     m_lcd.drawString(0, 0, tmpStr);
 
     sprintf(tmpStr, m_txt.battery.c_str(), m_intvoltage, m_battPercent);

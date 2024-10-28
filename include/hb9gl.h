@@ -4,7 +4,7 @@
 #include <EEPROM.h>
 #include <SSD1306.h> // LCD display
 #include <Wire.h>
-#include <config.h>
+#include <config.h> // our configuration file
 #include <cstdint>
 #include <string>
 
@@ -41,9 +41,10 @@ public:
     void reset_statusChanged();
 
 protected:
-    const Basic_settings m_basicSettings;
-    const Telemetry_settings m_tlmSettings;
-    const LoRa_settings m_loraSettings;
+    const Settings settings;
+    // const Basic_settings m_basicSettings;
+    // const Telemetry_settings m_tlmSettings;
+    // const LoRa_settings m_loraSettings;
     const Texts m_txt;
     float m_temperature{};
     float m_humidity{};
@@ -82,17 +83,8 @@ public:
 
     void init();
     void displayData();
-    void printBox(int16_t x, int16_t y, int16_t width, int16_t height , const String &text, bool inverse = false);
+    void printBox(int16_t x, int16_t y, int16_t width, int16_t height, const String &text, bool inverse = false);
 
 private:
     SSD1306 m_lcd;
-};
-
-class Lora : public Data
-{
-public:
-    Lora(DHT &dht) : Data(dht) {};
-    ~Lora() {};
-
-private:
 };

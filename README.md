@@ -7,7 +7,7 @@ The Module sends status data to the APRS network every 15 minutes or when critic
 I just made this repository visible to share my work. It's not code optimized in any kind, nor is it "clean" code.
 As soon as I find time, I will continue working on it.
 
-The actual module is installed since October 2024 and is sending data to the APRS network. You can watch it here: https://aprs.fi/info/a/HB9GL-15
+The actual module is installed since October 2024 and is sending data to the APRS network. You can watch it [here on aprs.fi](https://aprs.fi/info/a/HB9GL-15).
 
 ## Flashing via ESP Flash Download Tool from Espressif
 
