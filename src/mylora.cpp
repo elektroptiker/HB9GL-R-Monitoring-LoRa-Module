@@ -170,11 +170,12 @@ void MyLora::tx_telemetry_data(Display &display)
     EEPROM.write(m_settings.basic.EEPROMaddress, display.get_aprsPacketSeq());
     EEPROM.commit();
 
-    auto txvoltage = std::to_string(static_cast<int>(round((display.get_intVoltage() - 2.5) / (2.5 / 255))));
-    auto txtemperature = std::to_string(static_cast<int>(round((display.get_temperature() + 100))));
-    auto txhumidity = std::to_string(static_cast<int>(round(display.get_humidity())));
     auto txaprsPacketSeq = std::to_string(display.get_aprsPacketSeq());
-    auto txbattPercent = std::to_string(display.get_battPercent());
+    auto txvoltage =
+        std::to_string(static_cast<int>(round((display.get_intVoltage() - 2.5) / (2.5 / 255))));     // EQN: 0,0.01,2.5
+    auto txbattPercent = std::to_string(display.get_battPercent());                                  // EQN: 0,1,0
+    auto txtemperature = std::to_string(static_cast<int>(round((display.get_temperature() + 100)))); // EQN: 0,1,-100
+    auto txhumidity = std::to_string(static_cast<int>(round(display.get_humidity())));               // EQN: 0,1,0
 
     std::string txbits = "00000"; // bits for each of the digital telemetry channels
     txbits[0] = display.get_statusPCUSBpower() ? '1' : '0';
