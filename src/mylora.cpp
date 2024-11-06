@@ -170,9 +170,9 @@ void MyLora::tx_telemetry_data(Display &display)
     EEPROM.write(m_settings.basic.EEPROMaddress, display.get_aprsPacketSeq());
     EEPROM.commit();
 
-    auto txvoltage = std::to_string((display.get_intVoltage() - 2.5) / (2.5 / 255));
-    auto txtemperature = std::to_string((display.get_temperature() + 100));
-    auto txhumidity = std::to_string(display.get_humidity());
+    auto txvoltage = std::to_string(static_cast<int>(round((display.get_intVoltage() - 2.5) / (2.5 / 255))));
+    auto txtemperature = std::to_string(static_cast<int>(round((display.get_temperature() + 100))));
+    auto txhumidity = std::to_string(static_cast<int>(round(display.get_humidity())));
     auto txaprsPacketSeq = std::to_string(display.get_aprsPacketSeq());
     auto txbattPercent = std::to_string(display.get_battPercent());
 
@@ -184,8 +184,8 @@ void MyLora::tx_telemetry_data(Display &display)
     txbits[4] = display.get_statusEchoLink() ? '1' : '0';
 
     auto beacon = m_settings.tlm.callsign + ">" + m_settings.tlm.destcall + ":T#" + lpad(txaprsPacketSeq, 3, '0') +
-                  "," + lpad(txvoltage, 3) + "," + lpad(txbattPercent, 3) + "," + lpad(txtemperature, 3) + "," +
-                  lpad(txhumidity, 3) + ",," + txbits;
+                  "," + lpad(txvoltage, 3, '0') + "," + lpad(txbattPercent, 3, '0') + "," +
+                  lpad(txtemperature, 3, '0') + "," + lpad(txhumidity, 3, '0') + ",," + txbits;
 #if SERIALDEBUG
     Serial.print("tx_telemetry_data beacon:");
     Serial.println(beacon);
